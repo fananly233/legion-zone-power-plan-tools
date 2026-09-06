@@ -1,0 +1,15 @@
+# Local machine backups and diagnostic output must not be published.
+backups/
+*.pow
+*.disabled-by-user
+manifest.json
+*log*.txt
+*result*.txt
+error.txt
+plans-before.txt
+plans-after.txt
+.env
+.env.*
+.DS_Store
+.vscode/
+test-results/
