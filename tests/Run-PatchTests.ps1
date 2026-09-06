@@ -40,6 +40,26 @@ try {
         function script:Get-ExactTrayProcesses($Context) {
             if ($script:Fake.Running) { [pscustomobject]@{ExecutablePath=$Context.Tray;CommandLine=('"'+$Context.Tray+'"');ProcessId=123} }
         }
+        $script:Fake=@{Running=$true;Stopped=$false;Waited=$false;Disposed=$false;Timeout=$false}
+        function script:Get-Process {
+            param($Id,$ErrorAction)
+            $p=[pscustomobject]@{Handle=123}
+            $p | Add-Member ScriptMethod WaitForExit { param($Milliseconds)
+                if (-not $script:Fake.Stopped -or $Milliseconds -ne 10000) { throw 'Wrong stop/wait order.' }
+                $script:Fake.Waited=$true
+                return (-not $script:Fake.Timeout)
+            }
+            $p | Add-Member ScriptMethod Dispose { $script:Fake.Disposed=$true }
+            $p
+        }
+        function script:Stop-Process { param($InputObject,[switch]$Force) $script:Fake.Stopped=$true }
+        $trayContext=[pscustomobject]@{Tray='fixture.exe'}
+        Stop-VerifiedTray $trayContext
+        Assert ($script:Fake.Waited -and $script:Fake.Disposed) 'Stop did not wait and release its handle.'
+        $script:Fake.Timeout=$true; $script:Fake.Disposed=$false
+        Expect-Error { Stop-VerifiedTray $trayContext } 'Tray did not exit within 10 seconds'
+        Assert $script:Fake.Disposed 'Timeout leaked process handle.'
+        'PASS: tray termination waits for exit and rejects timeout'
         function script:Stop-VerifiedTray($Context) { $script:Fake.Running=$false }
         function script:Start-VerifiedTray($Context,[string]$Arguments) { $script:Fake.Running=$true }
         function script:Assert-TrayLoaded($Context) { if ($script:Fake.LoadFailure) { throw 'Simulated DLL loading failure.' } }

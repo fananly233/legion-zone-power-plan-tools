@@ -72,7 +72,16 @@ function Assert-TrayLoaded($Context) {
     throw 'Tray did not load the target DLL; restoring the original file.'
 }
 function Stop-VerifiedTray($Context) {
-    foreach ($p in @(Get-ExactTrayProcesses $Context)) { Stop-Process -Id $p.ProcessId -Force }
+    foreach ($p in @(Get-ExactTrayProcesses $Context)) {
+        $process = Get-Process -Id $p.ProcessId -ErrorAction SilentlyContinue
+        if ($null -eq $process) { continue }
+        try {
+            # Keep a process handle so exit and DLL unloading finish before writing/restarting.
+            $null = $process.Handle
+            Stop-Process -InputObject $process -Force
+            if (-not $process.WaitForExit(10000)) { throw 'Tray did not exit within 10 seconds.' }
+        } finally { $process.Dispose() }
+    }
 }
 function Install-CustomPlanPatch([string]$BackupDirectory) {
     $context = Get-CustomPlanPatchContext
