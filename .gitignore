@@ -1,6 +1,7 @@
 # Local machine backups and diagnostic output must not be published.
 backups/
 *.pow
+*.dll
 *.disabled-by-user
 manifest.json
 *log*.txt
