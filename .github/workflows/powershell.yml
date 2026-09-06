@@ -7,11 +7,11 @@ permissions:
 jobs:
   isolated-tests:
     runs-on: windows-latest
-    strategy:
-      matrix:
-        shell: [powershell, pwsh]
     steps:
       - uses: actions/checkout@v4
-      - name: Parse scripts and run isolated tests
-        shell: ${{ matrix.shell }}
+      - name: Windows PowerShell 5.1 isolated tests
+        shell: powershell
+        run: ./tests/Run-Tests.ps1
+      - name: PowerShell 7 isolated tests
+        shell: pwsh
         run: ./tests/Run-Tests.ps1
