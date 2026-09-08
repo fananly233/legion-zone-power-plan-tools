@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 $ErrorActionPreference='Stop'
 $module=Import-Module (Join-Path (Split-Path $PSScriptRoot -Parent) 'src\CustomPlanPatch.psm1') -Force -PassThru
 $temp=Join-Path ([IO.Path]::GetTempPath()) ('legion-patch-tests-'+[guid]::NewGuid().ToString('N'))
@@ -60,6 +60,12 @@ try {
         Expect-Error { Stop-VerifiedTray $trayContext } 'Tray did not exit within 10 seconds'
         Assert $script:Fake.Disposed 'Timeout leaked process handle.'
         'PASS: tray termination waits for exit and rejects timeout'
+        $script:Fake.Running=$false
+        $script:TrayStartHandler={param($Context,$Arguments) $script:Fake['CallbackArguments']=$Arguments}
+        Start-VerifiedTray $trayContext '--fixture'
+        Assert ($script:Fake.CallbackArguments -eq '--fixture') 'GUI tray restart callback lost arguments.'
+        $script:TrayStartHandler=$null
+        'PASS: GUI tray restart callback preserves arguments without spawning an elevated tray'
         function script:Stop-VerifiedTray($Context) { $script:Fake.Running=$false }
         function script:Start-VerifiedTray($Context,[string]$Arguments) { $script:Fake.Running=$true }
         function script:Assert-TrayLoaded($Context) { if ($script:Fake.LoadFailure) { throw 'Simulated DLL loading failure.' } }
@@ -71,7 +77,7 @@ try {
                 '/setactive' { $script:Fake.Active=$Arguments[1] }
                 '/export' { [IO.File]::WriteAllText($Arguments[1],'synthetic power plan') }
                 '/delete' { $script:Fake.Custom=$false }
-                '/import' { $script:Fake.Custom=$true }
+                '/import' { if($script:Fake.FailRestoreImport){throw 'Simulated recovery import failure.'}; $script:Fake.Custom=$true }
                 default { throw 'Unmocked OS call.' }
             }
         }
@@ -80,7 +86,7 @@ try {
             New-Item -ItemType Directory -Path $case | Out-Null
             $dll=Join-Path $case 'fixture.dll'
             [IO.File]::WriteAllBytes($dll,$original)
-            $script:Fake=@{Context=[pscustomobject]@{Dll=$dll;Tray=(Join-Path $case 'tray.exe');Version='2.0.28.8182'};Backup=(Join-Path $case 'backup');Custom=$true;Active=$script:FallbackGuid;Running=$true;LoadFailure=$false}
+            $script:Fake=@{Context=[pscustomobject]@{Dll=$dll;Tray=(Join-Path $case 'tray.exe');Version='2.0.28.8182'};Backup=(Join-Path $case 'backup');Custom=$true;Active=$script:FallbackGuid;Running=$true;LoadFailure=$false;FailRestoreImport=$false}
         }
         New-Fixture
         Install-CustomPlanPatch $script:Fake.Backup | Out-Null
@@ -95,6 +101,12 @@ try {
         Expect-Error { Install-CustomPlanPatch $script:Fake.Backup } 'Simulated DLL loading failure'
         Assert ($script:Fake.Custom -and $script:Fake.Running -and (Get-FileHash $script:Fake.Context.Dll).Hash -eq $script:OriginalHash) 'Loading failure did not roll back.'
         'PASS: DLL loading failure restores original bytes and plan'
+        New-Fixture
+        $script:Fake.LoadFailure=$true;$script:Fake.FailRestoreImport=$true
+        Expect-Error {Install-CustomPlanPatch $script:Fake.Backup} 'rollback incomplete'
+        $recovery=Get-Content -LiteralPath (Join-Path $script:Fake.Backup 'rollback.json') -Raw|ConvertFrom-Json
+        Assert (-not $recovery.Complete -and $recovery.OriginalError -like '*loading failure*' -and $recovery.RollbackErrors.Count -gt 0 -and $script:Fake.Running) 'Recovery failure hid original error or skipped tray restart.'
+        'PASS: recovery failure retains original error and attempts remaining steps'
 
         New-Fixture
         Install-CustomPlanPatch $script:Fake.Backup | Out-Null

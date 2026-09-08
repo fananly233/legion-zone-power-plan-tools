@@ -14,3 +14,8 @@ plans-after.txt
 .DS_Store
 .vscode/
 test-results/
+**/bin/
+**/obj/
+artifacts/
+*.zip
+*.user

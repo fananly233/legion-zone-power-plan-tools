@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyName>LenovoPowerPlanTools</AssemblyName>
+    <RootNamespace>LenovoPowerPlanTools</RootNamespace>
+    <Version>0.3.0</Version>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../src/*.psm1" LogicalName="Engine.%(Filename)%(Extension)" />
+    <EmbeddedResource Include="../src/GuiBridge.ps1" LogicalName="Engine.GuiBridge.ps1" />
+    <EmbeddedResource Include="../resources/catalog.json" LogicalName="Catalog.json" />
+  </ItemGroup>
+</Project>

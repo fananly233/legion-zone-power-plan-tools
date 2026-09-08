@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:Version = '2.0.28.8182'
@@ -91,6 +91,7 @@ function Disable-LegionPlans {
     $backup = [IO.Path]::GetFullPath($BackupDirectory)
     if (Test-Path -LiteralPath $backup) { throw 'Backup directory already exists; refusing to overwrite.' }
     New-Item -ItemType Directory -Path $backup | Out-Null
+    $mutationsStarted=$false
     try {
         $plans = @($present | ForEach-Object {
             $file = "$_.pow"
@@ -107,6 +108,7 @@ function Disable-LegionPlans {
         $manifest = [ordered]@{ SchemaVersion=1; Created=(Get-Date -Format o); InstallRoot=$context.Root; Version=$context.Version; ActiveGuid=$active; PerformanceSwitch=$switch; Plans=$plans; Templates=$templates }
         $manifest | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $backup 'manifest.json') -Encoding UTF8
         # The complete backup and manifest must exist before the first system mutation.
+        $mutationsStarted=$true
         Set-PerformanceSwitch $context 0
         foreach ($t in $templates) {
             if ($t.OriginallyEnabled) {
@@ -125,8 +127,37 @@ function Disable-LegionPlans {
         'Disable completed.' | Set-Content -LiteralPath (Join-Path $backup 'result.txt')
         Write-Output "Disabled. Backup: $backup"
     } catch {
-        $_ | Out-String | Set-Content -LiteralPath (Join-Path $backup 'error.txt')
-        throw "Operation stopped. Inspect the backup directory; if manifest.json exists, Restore can reverse completed changes. Details: $_"
+        $failure=$_
+        $failure | Out-String | Set-Content -LiteralPath (Join-Path $backup 'error.txt')
+        $recovery=New-Object 'System.Collections.Generic.List[string]'
+        if($mutationsStarted){
+            try {
+                $saved=Read-ValidatedBackup $backup $context
+                foreach($t in $saved.Templates){
+                    try {
+                        $source=Join-Path $context.Root $t.RelativePath
+                        $disabled=$source+'.disabled-by-user'
+                        if($t.OriginallyEnabled -and -not(Test-Path -LiteralPath $source)){
+                            if(Test-Path -LiteralPath $disabled){
+                                if((Get-FileHash -LiteralPath $disabled).Hash -ne $t.SHA256){throw 'Template changed during rollback.'}
+                                Rename-Item -LiteralPath $disabled -NewName ([IO.Path]::GetFileName($source))
+                            }else{Copy-Item -LiteralPath (Join-Path $backup $t.File) -Destination $source}
+                        }
+                        $expected=if($t.OriginallyEnabled){$source}else{$disabled}
+                        if((Get-FileHash -LiteralPath $expected).Hash -ne $t.SHA256){throw 'Template rollback hash mismatch.'}
+                    }catch{$recovery.Add("Template $($t.RelativePath): $_")}
+                }
+                foreach($p in $saved.Plans){
+                    try {if($p.Guid -notin @(Get-PlanIds)){Invoke-PowerCfg @('/import',(Join-Path $backup $p.File),$p.Guid)|Out-Null}
+                        if($p.Guid -notin @(Get-PlanIds)){throw 'Plan still missing.'}
+                    }catch{$recovery.Add("Plan $($p.Guid): $_")}
+                }
+                try {Set-PerformanceSwitch $context ([int]$saved.PerformanceSwitch);if((Get-PerformanceSwitch $context) -ne $saved.PerformanceSwitch){throw 'Switch rollback mismatch.'}}catch{$recovery.Add("PerformanceSwitch: $_")}
+                try {Invoke-PowerCfg @('/setactive',$saved.ActiveGuid)|Out-Null;if((Get-ActivePlan) -ne $saved.ActiveGuid){throw 'Active rollback mismatch.'}}catch{$recovery.Add("Active plan: $_")}
+            }catch{$recovery.Add("Backup validation: $_")}
+        }
+        @{OriginalError="$failure";RollbackErrors=@($recovery.ToArray());Complete=($recovery.Count -eq 0)}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $backup 'rollback.json') -Encoding UTF8
+        throw "Operation stopped. Backup: $backup. Rollback errors: $($recovery -join '; '). Original error: $failure"
     }
 }
 function Read-ValidatedBackup($BackupDirectory, $Context) {

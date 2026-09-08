@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $script:OriginalHash = '2683C4A52808468854D20631B16CEBD74B6DBCDDEF8D39D75C12EDCB97E7CDCB'
@@ -6,6 +6,7 @@ $script:PatchedHash = 'E27CB2AC82BE579A419B17FD490121CC63F301AB7A8CC95ED077F486D
 $script:PatchOffset = 0xF675F
 $script:CustomGuid = '587d380f-60e4-8729-8b42-b40f65eae0ff'
 $script:FallbackGuid = '381b4222-f694-41f0-9685-ff5bb260df2e'
+$script:TrayStartHandler = $null
 function Get-BytesHash([byte[]]$Bytes) {
     $sha = [Security.Cryptography.SHA256]::Create()
     try { ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-','') } finally { $sha.Dispose() }
@@ -56,7 +57,8 @@ function Get-TrayArguments($Process, $Context) {
 function Start-VerifiedTray($Context, [string]$Arguments) {
     $existing = @(Get-ExactTrayProcesses $Context)
     if (-not $existing.Count) {
-        if ($Arguments) { Start-Process -FilePath $Context.Tray -ArgumentList $Arguments -WindowStyle Hidden }
+        if ($null -ne $script:TrayStartHandler) { & $script:TrayStartHandler $Context $Arguments }
+        elseif ($Arguments) { Start-Process -FilePath $Context.Tray -ArgumentList $Arguments -WindowStyle Hidden }
         else { Start-Process -FilePath $Context.Tray -WindowStyle Hidden }
     }
 }
@@ -128,14 +130,24 @@ function Install-CustomPlanPatch([string]$BackupDirectory) {
         Write-Output "Applied. Backup: $backup"
     } catch {
         $failure=$_
+        $recovery=New-Object 'System.Collections.Generic.List[string]'
+        $stopped=$false
         if ($changed) {
-            Stop-VerifiedTray $context
-            [IO.File]::WriteAllBytes($context.Dll,$bytes)
-            if ($hadCustom -and (Invoke-CheckedPowerCfg @('/list') | Out-String) -notmatch $script:CustomGuid) { Invoke-CheckedPowerCfg @('/import',(Join-Path $backup 'custom.pow'),$script:CustomGuid) | Out-Null }
-            Invoke-CheckedPowerCfg @('/setactive',$active) | Out-Null
+            try { Stop-VerifiedTray $context; $stopped=$true } catch { $recovery.Add("Stop tray: $_") }
+            if($stopped) {
+                try { [IO.File]::WriteAllBytes($context.Dll,$bytes)
+                    if((Get-FileHash -LiteralPath $context.Dll).Hash -ne $script:OriginalHash){throw 'Original DLL hash mismatch after rollback.'}
+                } catch {$recovery.Add("Restore DLL: $_")}
+            }
+            try {if ($hadCustom -and (Invoke-CheckedPowerCfg @('/list') | Out-String) -notmatch $script:CustomGuid) { Invoke-CheckedPowerCfg @('/import',(Join-Path $backup 'custom.pow'),$script:CustomGuid) | Out-Null }} catch {$recovery.Add("Restore custom plan: $_")}
+            try {Invoke-CheckedPowerCfg @('/setactive',$active) | Out-Null
+                if((Invoke-CheckedPowerCfg @('/getactivescheme')|Out-String) -notmatch $active){throw 'Active plan rollback mismatch.'}
+            } catch {$recovery.Add("Restore active plan: $_")}
         }
-        if ($processes.Count) { Start-VerifiedTray $context $arguments }
+        if ($processes.Count) { try {Start-VerifiedTray $context $arguments} catch {$recovery.Add("Restart tray: $_")} }
         $failure | Out-String | Set-Content -LiteralPath (Join-Path $backup 'error.txt')
+        @{OriginalError="$failure";RollbackErrors=@($recovery.ToArray());Complete=($recovery.Count -eq 0)} | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $backup 'rollback.json') -Encoding UTF8
+        if($recovery.Count){throw "Patch failed: $failure ; rollback incomplete: $($recovery -join '; ') ; backup: $backup"}
         throw $failure
     }
 }
@@ -154,12 +166,20 @@ function Restore-CustomPlanPatch([string]$BackupDirectory) {
     $processes=@(Get-ExactTrayProcesses $context)
     $arguments=if ($processes.Count) { Get-TrayArguments $processes[0] $context } else { '' }
     Stop-VerifiedTray $context
+    $restoreErrors=New-Object 'System.Collections.Generic.List[string]'
     try {
         [IO.File]::WriteAllBytes($context.Dll,[IO.File]::ReadAllBytes($saved))
         if ((Get-FileHash -LiteralPath $context.Dll).Hash -ne $script:OriginalHash) { throw 'Restored DLL hash mismatch.' }
         if ($m.HadCustom -and $listing -notmatch $script:CustomGuid) { Invoke-CheckedPowerCfg @('/import',(Join-Path $backup 'custom.pow'),$script:CustomGuid) | Out-Null }
         Invoke-CheckedPowerCfg @('/setactive',$m.ActiveGuid) | Out-Null
+        if((Invoke-CheckedPowerCfg @('/getactivescheme')|Out-String) -notmatch $m.ActiveGuid){throw 'Restored active plan mismatch.'}
+        if($m.HadCustom -and (Invoke-CheckedPowerCfg @('/list')|Out-String) -notmatch $script:CustomGuid){throw 'Restored custom plan missing.'}
         'Original signed DLL and original active plan restored.' | Set-Content -LiteralPath (Join-Path $backup 'restore-result.txt')
-    } finally { if ($processes.Count) { Start-VerifiedTray $context $arguments } }
+    } catch {$restoreErrors.Add("Restore: $_")}
+    finally {
+        if ($processes.Count) {try {Start-VerifiedTray $context $arguments}catch{$restoreErrors.Add("Restart tray: $_")}}
+        @{Complete=($restoreErrors.Count -eq 0);Errors=@($restoreErrors.ToArray())}|ConvertTo-Json -Depth 4|Set-Content -LiteralPath (Join-Path $backup 'restore-status.json') -Encoding UTF8
+    }
+    if($restoreErrors.Count){throw "Restore incomplete: $($restoreErrors -join '; ') ; backup: $backup"}
 }
 Export-ModuleMember -Function Get-CustomPlanPatchState, Install-CustomPlanPatch, Restore-CustomPlanPatch

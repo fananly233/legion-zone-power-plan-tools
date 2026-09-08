@@ -1,5 +1,30 @@
 # Legion Zone Power Plan Tools
 
+**0.3.0 新增中文 Windows GUI：通用电源计划管理 + 按版本开放的联想防重建。**
+
+下载 [Releases](https://github.com/fananly233/legion-zone-power-plan-tools/releases) 中的 win-x64 便携 ZIP，解压后普通双击 LenovoPowerPlanTools.exe。无需安装 .NET 或 PowerShell 7；修改时单独请求管理员权限。
+
+- 概览、电源计划、联想防重建、备份恢复四个页面，支持界面缩放。
+- 收录 NexBox 的六个计划及 optimizerDuck，按需从固定提交下载并验证 SHA256。导入与激活分开，不自动试用。
+- 支持本地 .pow 导入、参数查看、导出、切换、删除与恢复。保护 Windows 平衡，导入失败会检查并清理新 GUID 残留。
+- Modern Standby / 未知状态只允许激活已确认的平衡类型；PowerX 在 AMD 或无法识别 CPU 上受限制。不会改待机机制或安装守护任务。
+- 未适配的 Lenovo 版本仍可使用通用管理；DLL 补丁继续使用精确哈希白名单。
+
+详见 [GUI 使用说明](docs/gui-guide.md)、[适配与实际验证范围](docs/compatibility.md)、[第三方来源声明](THIRD_PARTY_NOTICES.md)。本机备份、运行日志和厂商 DLL 不上传。
+
+### 构建与测试
+
+```powershell
+dotnet run --project desktop/LegionPowerPlanTools.csproj
+./tests/Run-Tests.ps1
+./tests/Run-PatchTests.ps1
+./tests/Run-WindowsPlanTests.ps1
+dotnet run --project tests/DesktopChecks/DesktopChecks.csproj -c Release
+./scripts/Publish-Portable.ps1
+```
+
+原生导入验证仅在临时虚拟机中执行，见 Desktop workflow。后文保留原命令行功能及其历史验证说明。
+
 用于备份、删除和恢复 Lenovo Legion Zone 电源计划的 PowerShell 工具。
 
 针对“删除联想电源计划后，启动游戏或切换模式又被创建”的情况，工具会关闭游戏自动性能切换，并把已知导入模板改名为 `.disabled-by-user`，阻止当前版本从原路径导入。所有修改前先创建本机备份。
@@ -126,7 +151,7 @@ config/SYS_SCHEME_BALANCE.pow
 
 不会停止 Legion Zone、Gaming AI 或 Fn 热键服务，不修改 BIOS、风扇曲线、超频设置或软件更新设置，也不会安装后台清理任务。删除 Windows 计划不等于删除固件性能档位，Fn+Q 和软件中仍可能显示安静、均衡、野兽等模式。
 
-执行中断时保留备份及 `error.txt`。如果完整 `manifest.json` 已产生，可以尝试恢复已完成的部分；脚本不自动回滚，也不会自动清除失败备份。
+执行中断时保留备份及 `error.txt`。0.3.0 起，在完整备份后发生修改失败会尝试自动回滚，并把原始错误与回滚错误分别写入 `rollback.json`。不会自动清除失败备份；回滚未完成时可检查清单后手动恢复。
 
 ## 测试与验证边界
 
@@ -137,7 +162,7 @@ config/SYS_SCHEME_BALANCE.pow
 
 测试使用临时文件夹和模块内模拟的电源、注册表接口，覆盖删除与恢复、保留非联想活动计划、重复执行、备份失败、删除中途失败、备份损坏、清单路径异常、模板冲突和版本不匹配。测试不操作真实电源计划或注册表。GitHub Actions 在 Windows PowerShell 与 PowerShell 7 下运行同样的隔离测试。
 
-补丁测试另有 6 组，使用合成字节和模拟进程，覆盖仅修改两字节、保留跳转目标、拒绝未知文件/字节、等待托盘退出及超时、补丁安装恢复、DLL 加载失败自动回滚、重复安装及损坏备份保护。测试不加载或修改真实联想 DLL。
+补丁测试另有 8 组，使用合成字节和模拟进程，覆盖仅修改两字节、保留跳转目标、拒绝未知文件/字节、等待托盘退出及超时、GUI 重启回调、补丁安装恢复、加载失败回滚、恢复中途失败、重复安装及损坏备份保护。测试不加载或修改真实联想 DLL。
 
 本项目源自一次本机实际修改：原始脚本执行后等待 12 秒并复查，四个计划未出现、模板已改名、切换值为 0，随后再次复查通过。**本仓库重构版本的写入与恢复流程使用隔离测试验证，没有再次在真实系统执行。** 未验证重新开游戏、重启、长期稳定性、性能或续航。
 
