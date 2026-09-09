@@ -18,7 +18,6 @@ foreach($name in @('LICENSE.txt','ThirdPartyNotices.txt')){
 Copy-Item -LiteralPath (Join-Path $repo 'docs\gui-guide.md') -Destination (Join-Path $OutputDirectory '使用说明.md')
 Copy-Item -LiteralPath (Join-Path $repo 'docs\compatibility.md') -Destination (Join-Path $OutputDirectory '适配与验证.md')
 Copy-Item -LiteralPath (Join-Path $repo 'THIRD_PARTY_NOTICES.md') -Destination $OutputDirectory
-Copy-Item -LiteralPath (Join-Path $repo 'LICENSE') -Destination $OutputDirectory
 Copy-Item -LiteralPath (Join-Path $repo 'resources\catalog.json') -Destination (Join-Path $OutputDirectory '资源来源.json')
 $zip=Join-Path (Split-Path $OutputDirectory -Parent) 'LenovoPowerPlanTools-v0.3.0-win-x64.zip'
 if(Test-Path -LiteralPath $zip){throw 'Release archive exists; refusing overwrite.'}
