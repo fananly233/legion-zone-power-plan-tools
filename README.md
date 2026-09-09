@@ -2,6 +2,8 @@
 
 **0.3.0 新增中文 Windows GUI：通用电源计划管理 + 按版本开放的联想防重建。**
 
+此版本作为预览版发布。临时 Server VM 原生恢复测试通过；资源库 5 个文件完成导入与参数检查，PowerX / ggOS 被该 VM 拒绝。Windows 10、完整 GUI 修改流程和游戏/重启防重建仍待实测，详见适配矩阵。
+
 下载 [Releases](https://github.com/fananly233/legion-zone-power-plan-tools/releases) 中的 win-x64 便携 ZIP，解压后普通双击 LenovoPowerPlanTools.exe。无需安装 .NET 或 PowerShell 7；修改时单独请求管理员权限。
 
 - 概览、电源计划、联想防重建、备份恢复四个页面，支持界面缩放。

@@ -139,7 +139,7 @@ public sealed class MainWindow : Window
             box.Children.Add(T(asset.Name, 18, true));
             box.Children.Add(T(asset.Repository + "  ·  " + (Catalog.Matches(Catalog.CachePath(asset), asset.Sha256) ? "缓存已核验" : "尚未下载"), 12, false, "#087E8B"));
             box.Children.Add(T(asset.Description));
-            box.Children.Add(T("验证范围：只读文件分析；未验证性能、续航或全部机型。", 12, false, "#526574"));
+            box.Children.Add(T(asset.Validation + "；未验证性能、续航或全部机型。", 12, false, "#526574"));
             var row = new WrapPanel();
             row.Children.Add(B("下载 / 校验缓存", async () => { await Catalog.DownloadAsync(asset, Report); RenderLibrary(); }));
             var import = B("导入计划", async () =>
