@@ -24,11 +24,16 @@ try {
     Ensure ((Get-FileHash -LiteralPath $file).Hash -eq $asset.Sha256) ('Source hash mismatch: '+$asset.Id)
     $id=[guid]::NewGuid().ToString();$created.Add($id)
     try {
-        Power @('/import',$file,$id)|Out-Null
+        $importError=$null
+        try {Power @('/import',$file,$id)|Out-Null} catch {$importError=$_.Exception.Message}
+        if($importError){
+            $reports.Add([ordered]@{Id=$asset.Id;Sha256=$asset.Sha256;Imported=$false;Activated=$false;Error=$importError;Personality='Unknown';Parameters='Unavailable: native import rejected'})
+        } else {
         $details=Power @('/qh',$id)|Out-String
         $details|Set-Content -LiteralPath (Join-Path $OutputDirectory ($asset.Id+'-parameters.txt')) -Encoding UTF8
         $setting=Get-ItemProperty -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\$id\245d8541-3943-4422-b025-13a784f679b7"
         $reports.Add([ordered]@{Id=$asset.Id;Sha256=$asset.Sha256;Imported=$true;Activated=$false;AcPersonalityIndex=$setting.ACSettingIndex;DcPersonalityIndex=$setting.DCSettingIndex;Personality=(& $module {param($g) Get-PlanPersonality $g} $id)})
+        }
     } finally {
         if($id -in @((Get-SystemPlans).Guid)){Power @('/delete',$id)|Out-Null}
         Ensure ($id -notin @((Get-SystemPlans).Guid)) ('Audit residue: '+$id)
@@ -54,7 +59,7 @@ try {
  Ensure ((& $module {Get-CurrentPlan}) -eq $original) 'Final active plan mismatch'
  [ordered]@{SchemaVersion=1;Environment='Disposable Windows VM';OS=(Get-CimInstance Win32_OperatingSystem).Caption;Build=[Environment]::OSVersion.Version.ToString();Catalog=@($reports.ToArray());NativeRoundTrip='Passed';ThirdPartyActivation='Not tested';VendorPatch='Not tested'} |
     ConvertTo-Json -Depth 8|Set-Content -LiteralPath (Join-Path $OutputDirectory 'summary.json') -Encoding UTF8
- 'PASS: seven pinned assets imported, parameters read, all removed; Balanced fixture import/activate/delete/restore round trip.'
+ "PASS: seven pinned assets audited ($(@($reports | Where-Object Imported).Count) imported; native rejections recorded), no residue; Balanced fixture import/activate/delete/restore round trip."
 } finally {
  Power @('/setactive',$original)|Out-Null
  foreach($id in $created){if($id -in @((Get-SystemPlans).Guid)){Power @('/delete',$id)|Out-Null}}

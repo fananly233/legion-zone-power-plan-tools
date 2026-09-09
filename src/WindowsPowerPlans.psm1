@@ -3,8 +3,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference='Stop'
 $script:Balanced='381b4222-f694-41f0-9685-ff5bb260df2e'
 function Invoke-SystemPower([string[]]$Arguments) {
-    $output=& "$env:SystemRoot\System32\powercfg.exe" @Arguments 2>&1
-    if($LASTEXITCODE -ne 0){throw "powercfg 执行失败：$output"}
+    # Windows PowerShell turns native stderr into ErrorRecord objects. Capture them
+    # before interpreting the exit code so failures reach the transaction rollback.
+    $previousPreference=$ErrorActionPreference
+    try {
+        $ErrorActionPreference='Continue'
+        $output=& "$env:SystemRoot\System32\powercfg.exe" @Arguments 2>&1
+        $exitCode=$LASTEXITCODE
+    } finally { $ErrorActionPreference=$previousPreference }
+    if($exitCode -ne 0){throw "powercfg $($Arguments[0]) 执行失败（$exitCode）：$output"}
     $output
 }
 function Assert-PlanGuid([string]$Guid) {

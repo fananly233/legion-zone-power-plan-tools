@@ -31,6 +31,9 @@ jobs:
       - name: Disposable VM native power API validation
         shell: powershell
         run: ./tests/Invoke-VmValidation.ps1 -AllowVirtualMachineChanges
+      - name: Administrator worker integration in CI VM
+        shell: pwsh
+        run: dotnet run --project tests/DesktopChecks/DesktopChecks.csproj -c Release -- --vm-worker
       - name: Publish portable app
         shell: pwsh
         run: ./scripts/Publish-Portable.ps1
