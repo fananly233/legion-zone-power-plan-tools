@@ -2,7 +2,10 @@
 param([Parameter(Mandatory)][string]$RequestPath,[Parameter(Mandatory)][string]$ResponsePath)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
-Import-Module Microsoft.PowerShell.Utility,Microsoft.PowerShell.Management -Global
+$builtinModules=Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\Modules'
+foreach($name in @('Microsoft.PowerShell.Utility','Microsoft.PowerShell.Management')){
+    Import-Module (Join-Path $builtinModules "$name\$name.psd1") -Global
+}
 Import-Module (Join-Path $PSScriptRoot 'WindowsPowerPlans.psm1') -Force
 try {
     $r=Get-Content -LiteralPath $RequestPath -Raw | ConvertFrom-Json

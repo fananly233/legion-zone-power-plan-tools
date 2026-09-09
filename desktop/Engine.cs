@@ -196,6 +196,9 @@ public static class Engine
         await File.WriteAllTextAsync(requestPath, request.ToJsonString(), new UTF8Encoding(false));
         var info = new ProcessStartInfo(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\powershell.exe"))
         { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        // A GUI launched from PowerShell 7 inherits its module search path. Only load
+        // the Windows PowerShell built-ins that match the 5.1 bridge process.
+        info.Environment["PSModulePath"] = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), @"System32\WindowsPowerShell\v1.0\Modules");
         foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", Path.Combine(dir, "GuiBridge.ps1"), "-RequestPath", requestPath, "-ResponsePath", responsePath }) info.ArgumentList.Add(arg);
         using var process = Process.Start(info)!;
         var outputTask = process.StandardOutput.ReadToEndAsync(); var errorTask = process.StandardError.ReadToEndAsync();
